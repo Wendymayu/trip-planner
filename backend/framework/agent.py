@@ -5,26 +5,30 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm import LLMClient
 from tools import ToolRegistry
+from memory import Memory, ConversationMemory, Message
 
 
 class Agent:
-    """支持工具调用的Agent"""
+    """支持工具调用和记忆的Agent"""
 
     def __init__(
         self,
         name: str,
         llm: LLMClient,
         system_prompt: str = None,
-        tool_registry: ToolRegistry = None
+        tool_registry: ToolRegistry = None,
+        memory: Memory = None
     ):
         self.name = name
         self.llm = llm
         self.system_prompt = system_prompt or "你是一个专业的助手"
         self.tool_registry = tool_registry
+        # 默认使用会话记忆
+        self.memory = memory if memory is not None else ConversationMemory()
 
     def act(self, input: str, max_iterations: int = 5) -> str:
         """
-        执行任务，支持工具调用循环
+        执行任务，支持工具调用循环和记忆
 
         Args:
             input: 用户输入
@@ -33,14 +37,15 @@ class Agent:
         Returns:
             Agent的最终响应
         """
-        # 构建消息列表
-        messages = [{"role": "system", "content": self.system_prompt}]
-        messages.append({"role": "user", "content": input})
+        # 使用记忆构建消息列表（包含历史对话）
+        messages = self.memory.build_messages(self.system_prompt, input)
 
         # 获取工具schema
         tools = None
         if self.tool_registry and len(self.tool_registry.tools) > 0:
             tools = self.tool_registry.get_openai_tools()
+
+        final_response = ""
 
         # 工具调用循环
         for iteration in range(max_iterations):
@@ -51,9 +56,10 @@ class Agent:
 
             # 检查是否有工具调用
             if not message.tool_calls:
-                # 无工具调用，返回最终响应
+                # 无工具调用，获得最终响应
                 print(f"[迭代 {iteration + 1}] 无工具调用，返回结果")
-                return message.content or ""
+                final_response = message.content or ""
+                break
 
             # 有工具调用，执行工具并继续循环
             print(f"[迭代 {iteration + 1}] 模型请求调用 {len(message.tool_calls)} 个工具")
@@ -94,9 +100,15 @@ class Agent:
                     "content": result
                 })
 
-        # 达到最大迭代次数
-        print(f"[警告] 达到最大迭代次数 {max_iterations}")
-        return "达到最大迭代次数，无法完成任务"
+        # 存储到记忆（只存用户输入和最终响应）
+        self.memory.add(Message.user(input))
+        self.memory.add(Message.assistant(final_response))
+
+        return final_response
+
+    def clear_memory(self) -> None:
+        """清空记忆"""
+        self.memory.clear()
 
 
 if __name__ == "__main__":
@@ -128,7 +140,7 @@ if __name__ == "__main__":
         }
     )
 
-    # 创建Agent
+    # 创建带工具的Agent
     agent = Agent(
         name="天气助手",
         llm=llm,
@@ -136,7 +148,19 @@ if __name__ == "__main__":
         tool_registry=registry
     )
 
-    # 测试
-    print("=== 测试 Agent 工具调用 ===")
-    response = agent.act("我现在在哪里？那里的天气怎么样？")
-    print(f"\n最终响应: {response}")
+    print("=== 测试 Agent 工具调用 + 记忆 ===")
+
+    # 第一次对话（使用工具查询天气）
+    print("\n--- 第一次对话 ---")
+    response1 = agent.act("我现在在哪里？那里的天气怎么样？")
+    print(f"\n最终响应: {response1}")
+
+    # 第二次对话（应该记得之前的查询结果）
+    print("\n--- 第二次对话 ---")
+    response2 = agent.act("你还记得我刚才查询的城市和天气吗？")
+    print(f"\n最终响应: {response2}")
+
+    # 查看记忆内容
+    print(f"\n--- 记忆内容 ({len(agent.memory)} 条消息) ---")
+    for msg in agent.memory.get_all():
+        print(f"  [{msg.role}]: {msg.content[:80]}...")
