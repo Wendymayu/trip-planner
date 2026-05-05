@@ -6,25 +6,31 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from llm import LLMClient
 from tools import ToolRegistry
 from memory import Memory, ConversationMemory, Message
+from prompt import PromptTemplate
 
 
 class Agent:
-    """支持工具调用和记忆的Agent"""
+    """支持工具调用、记忆和提示词模板的Agent"""
 
     def __init__(
         self,
         name: str,
         llm: LLMClient,
-        system_prompt: str = None,
+        prompt_template: PromptTemplate = None,
         tool_registry: ToolRegistry = None,
         memory: Memory = None
     ):
         self.name = name
         self.llm = llm
-        self.system_prompt = system_prompt or "你是一个专业的助手"
         self.tool_registry = tool_registry
         # 默认使用会话记忆
         self.memory = memory if memory is not None else ConversationMemory()
+
+        # 提示词模板
+        self.prompt_template = prompt_template
+
+        # 模板变量存储
+        self._template_vars = {}
 
     def act(self, input: str, max_iterations: int = 5) -> str:
         """
@@ -38,7 +44,8 @@ class Agent:
             Agent的最终响应
         """
         # 使用记忆构建消息列表（包含历史对话）
-        messages = self.memory.build_messages(self.system_prompt, input)
+        system_prompt = self._build_system_prompt()
+        messages = self.memory.build_messages(system_prompt, input)
 
         # 获取工具schema
         tools = None
@@ -110,6 +117,24 @@ class Agent:
         """清空记忆"""
         self.memory.clear()
 
+    def set_template_vars(self, **kwargs) -> None:
+        """设置模板变量
+
+        Args:
+            **kwargs: 模板变量键值对
+        """
+        self._template_vars.update(kwargs)
+
+    def _build_system_prompt(self) -> str:
+        """构建系统提示词
+
+        Returns:
+            完整的系统提示词
+        """
+        if self.prompt_template:
+            return self.prompt_template.render(**self._template_vars)
+        return "你是一个专业的助手"
+
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
@@ -140,25 +165,31 @@ if __name__ == "__main__":
         }
     )
 
-    # 创建带工具的Agent
+    print("=== 测试 Agent 提示词工程 ===\n")
+
+    # 使用提示词模板
+    print("--- 测试: 使用提示词模板 ---")
+    weather_template = PromptTemplate(
+        name="weather",
+        template="你是{{city}}的天气助手，任务：{{task}}。当前季节：{{season}}。",
+        defaults={"task": "查询和分析天气", "season": "夏季"}
+    )
+
     agent = Agent(
         name="天气助手",
         llm=llm,
-        system_prompt="你是一个天气助手，可以帮助用户查询天气信息。当用户询问天气时，先查询位置，再查询天气。",
+        prompt_template=weather_template,
         tool_registry=registry
     )
+    agent.set_template_vars(city="北京")
+    print(f"系统提示词:\n{agent._build_system_prompt()}\n")
 
     print("=== 测试 Agent 工具调用 + 记忆 ===")
 
-    # 第一次对话（使用工具查询天气）
-    print("\n--- 第一次对话 ---")
-    response1 = agent.act("我现在在哪里？那里的天气怎么样？")
-    print(f"\n最终响应: {response1}")
-
-    # 第二次对话（应该记得之前的查询结果）
-    print("\n--- 第二次对话 ---")
-    response2 = agent.act("你还记得我刚才查询的城市和天气吗？")
-    print(f"\n最终响应: {response2}")
+    # 进行工具调用测试
+    print("\n--- 对话测试 ---")
+    response = agent.act("我现在在哪里？那里的天气怎么样？")
+    print(f"\n最终响应: {response}")
 
     # 查看记忆内容
     print(f"\n--- 记忆内容 ({len(agent.memory)} 条消息) ---")
