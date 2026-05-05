@@ -3,20 +3,14 @@
 提供 Token 计数和预算控制功能。
 
 使用示例:
-    from framework.context import TokenCounter, ContextConfig
+    from framework.context import ContextManager, ContextConfig
 
-    # 计算 token 数
-    counter = TokenCounter()
-    tokens = counter.count_text("你好世界")
-
-    # 检查预算
-    config = ContextConfig(max_tokens=4000)
-    if counter.count_messages(messages) > config.budget:
-        # 处理超预算
-        pass
+    manager = ContextManager(ContextConfig(max_tokens=4000))
+    messages = manager.build(system_prompt="你是助手", history=[], user_input="你好")
 """
 
 from .config import ContextConfig
 from .tokenizer import TokenCounter
+from .manager import ContextManager
 
-__all__ = ["ContextConfig", "TokenCounter"]
+__all__ = ["ContextConfig", "TokenCounter", "ContextManager"]

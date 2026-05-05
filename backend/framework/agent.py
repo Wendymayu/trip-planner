@@ -7,7 +7,7 @@ from llm import LLMClient
 from tools import ToolRegistry
 from memory import Memory, ConversationMemory, Message
 from prompt import PromptTemplate
-from context import TokenCounter, ContextConfig
+from context import ContextConfig, ContextManager
 
 
 class Agent:
@@ -31,9 +31,9 @@ class Agent:
         # 提示词模板
         self.prompt_template = prompt_template
 
-        # 上下文配置
+        # 上下文管理
         self.context_config = context_config if context_config is not None else ContextConfig()
-        self.token_counter = TokenCounter()
+        self.context_manager = ContextManager(self.context_config)
 
         # 模板变量存储
         self._template_vars = {}
@@ -49,15 +49,19 @@ class Agent:
         Returns:
             Agent的最终响应
         """
-        # 使用记忆构建消息列表（包含历史对话）
+        # 使用 ContextManager 构建消息列表
         system_prompt = self._build_system_prompt()
-        messages = self.memory.build_messages(system_prompt, input)
+        messages = self.context_manager.build(
+            system_prompt=system_prompt,
+            history=self.memory.get_all(),
+            user_input=input
+        )
 
         # 检查 token 预算
-        token_count = self.token_counter.count_messages(messages)
-        print(f"[Token] 当前消息 {token_count} tokens，预算 {self.context_config.budget} tokens")
-        if token_count > self.context_config.budget:
-            print(f"[警告] 超出预算 {token_count - self.context_config.budget} tokens")
+        stats = self.context_manager.statistics(messages)
+        print(f"[Token] 当前消息 {stats['total']} tokens，预算 {stats['budget']} tokens")
+        if stats['total'] > stats['budget']:
+            print(f"[警告] 超出预算 {stats['total'] - stats['budget']} tokens")
 
         # 获取工具schema
         tools = None
