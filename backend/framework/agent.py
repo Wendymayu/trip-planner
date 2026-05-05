@@ -7,6 +7,7 @@ from llm import LLMClient
 from tools import ToolRegistry
 from memory import Memory, ConversationMemory, Message
 from prompt import PromptTemplate
+from context import TokenCounter, ContextConfig
 
 
 class Agent:
@@ -18,7 +19,8 @@ class Agent:
         llm: LLMClient,
         prompt_template: PromptTemplate = None,
         tool_registry: ToolRegistry = None,
-        memory: Memory = None
+        memory: Memory = None,
+        context_config: ContextConfig = None
     ):
         self.name = name
         self.llm = llm
@@ -28,6 +30,10 @@ class Agent:
 
         # 提示词模板
         self.prompt_template = prompt_template
+
+        # 上下文配置
+        self.context_config = context_config if context_config is not None else ContextConfig()
+        self.token_counter = TokenCounter()
 
         # 模板变量存储
         self._template_vars = {}
@@ -46,6 +52,12 @@ class Agent:
         # 使用记忆构建消息列表（包含历史对话）
         system_prompt = self._build_system_prompt()
         messages = self.memory.build_messages(system_prompt, input)
+
+        # 检查 token 预算
+        token_count = self.token_counter.count_messages(messages)
+        print(f"[Token] 当前消息 {token_count} tokens，预算 {self.context_config.budget} tokens")
+        if token_count > self.context_config.budget:
+            print(f"[警告] 超出预算 {token_count - self.context_config.budget} tokens")
 
         # 获取工具schema
         tools = None
@@ -112,10 +124,6 @@ class Agent:
         self.memory.add(Message.assistant(final_response))
 
         return final_response
-
-    def clear_memory(self) -> None:
-        """清空记忆"""
-        self.memory.clear()
 
     def set_template_vars(self, **kwargs) -> None:
         """设置模板变量
