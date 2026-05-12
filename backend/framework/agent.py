@@ -1,17 +1,25 @@
-import os
-import sys
 import json
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from llm import LLMClient
-from tools import ToolRegistry
-from memory import Memory, ConversationMemory, Message
-from prompt import PromptTemplate
-from context import ContextConfig, ContextManager
+# 处理两种导入方式
+try:
+    from llm import LLMClient
+    from tools import ToolRegistry
+    from memory import Memory, ConversationMemory, Message
+    from prompt import PromptTemplate
+    from context import ContextConfig, ContextManager
+except ImportError:
+    from framework.llm import LLMClient
+    from framework.tools import ToolRegistry
+    from framework.memory import Memory, ConversationMemory, Message
+    from framework.prompt import PromptTemplate
+    from framework.context import ContextConfig, ContextManager
 
 
 class Agent:
-    """支持工具调用、记忆和提示词模板的Agent"""
+    """支持工具调用、记忆和提示词模板的Agent
+
+    注意：Skill 已统一转换为 Tool（早绑定），通过 ToolRegistry 管理
+    """
 
     def __init__(
         self,
@@ -63,18 +71,18 @@ class Agent:
         if stats['total'] > stats['budget']:
             print(f"[警告] 超出预算 {stats['total'] - stats['budget']} tokens")
 
-        # 获取工具schema
-        tools = None
+        # 获取工具 schema
+        tools = []
         if self.tool_registry and len(self.tool_registry.tools) > 0:
-            tools = self.tool_registry.get_openai_tools()
+            tools.extend(self.tool_registry.get_openai_tools())
 
         final_response = ""
 
-        # 工具调用循环
+        # 工具/技能调用循环
         for iteration in range(max_iterations):
             print(f"\n[迭代 {iteration + 1}] 调用LLM...")
 
-            response = self.llm.chat(messages, tools=tools, tool_choice="auto")
+            response = self.llm.chat(messages, tools=tools if tools else None, tool_choice="auto")
             message = response.choices[0].message
 
             # 检查是否有工具调用
@@ -84,8 +92,8 @@ class Agent:
                 final_response = message.content or ""
                 break
 
-            # 有工具调用，执行工具并继续循环
-            print(f"[迭代 {iteration + 1}] 模型请求调用 {len(message.tool_calls)} 个工具")
+            # 有工具调用，执行工具/技能并继续循环
+            print(f"[迭代 {iteration + 1}] 模型请求调用 {len(message.tool_calls)} 个工具/技能")
 
             # 将assistant消息添加到历史
             messages.append({
@@ -106,20 +114,20 @@ class Agent:
 
             # 执行每个工具
             for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
+                name = tool_call.function.name
+                args = json.loads(tool_call.function.arguments)
 
-                print(f"  - 执行工具: {tool_name}, 参数: {tool_args}")
+                print(f"  - 执行: {name}, 参数: {args}")
 
                 # 执行工具
-                result = self.tool_registry.execute(tool_name, tool_args)
-                print(f"  - 工具结果: {result}")
+                result = self._execute_tool(name, args)
+                print(f"  - 结果: {result}")
 
-                # 将工具结果添加到消息
+                # 将结果添加到消息
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "name": tool_name,
+                    "name": name,
                     "content": result
                 })
 
@@ -136,6 +144,20 @@ class Agent:
             **kwargs: 模板变量键值对
         """
         self._template_vars.update(kwargs)
+
+    def _execute_tool(self, name: str, args: dict) -> str:
+        """执行工具
+
+        Args:
+            name: 工具名称
+            args: 参数
+
+        Returns:
+            执行结果（字符串格式）
+        """
+        if self.tool_registry and name in self.tool_registry.tools:
+            return self.tool_registry.execute(name, args)
+        return f"Error: '{name}' not found in tools"
 
     def _build_system_prompt(self) -> str:
         """构建系统提示词

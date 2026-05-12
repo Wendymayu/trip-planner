@@ -71,6 +71,19 @@ class ToolRegistry:
         """生成 OpenAI function calling 格式的工具列表"""
         return [tool.to_openai_format() for tool in self.tools.values()]
 
+    def register_skill(self, skill) -> None:
+        """将 Skill 注册为 Tool（早绑定）
+
+        Args:
+            skill: Skill 对象（必须有 name, description, parameters, execute）
+        """
+        self.tools[skill.name] = ToolSchema(
+            name=skill.name,
+            description=skill.description,
+            parameters=skill.parameters,
+            func=skill.execute
+        )
+
     def execute(self, name: str, arguments: Dict[str, Any]) -> str:
         """
         执行工具并返回结果
@@ -88,6 +101,12 @@ class ToolRegistry:
 
         try:
             result = tool_schema.func(**arguments)
+            # SkillResult 处理
+            if hasattr(result, 'success') and hasattr(result, 'output'):
+                if result.success:
+                    return json.dumps(result.output, ensure_ascii=False) if isinstance(result.output, dict) else str(result.output)
+                return f"Error: {result.error}"
+            # 普通结果处理
             if isinstance(result, str):
                 return result
             return json.dumps(result, ensure_ascii=False)
