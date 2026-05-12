@@ -28,14 +28,13 @@ if __name__ == "__main__":
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     sys.path.insert(0, project_root)
 
-from framework.skill.base import Skill, SkillResult
+from framework.skill.base import Skill
 
 
 class MetadataSkill(Skill):
     """元数据 Skill（延迟加载实现）
 
     只包含元数据，实现代码在首次执行时才加载。
-    适合批量加载大量 Skill 的场景。
     """
 
     def __init__(
@@ -52,7 +51,7 @@ class MetadataSkill(Skill):
         self.parameters = parameters
         self._metadata = metadata
         self._implementation_path = implementation_path
-        self._implementation = None  # 延迟加载
+        self._implementation = None
         self._loaded = False
 
     def _load_implementation(self):
@@ -80,36 +79,15 @@ class MetadataSkill(Skill):
 
         self._loaded = True
 
-    def execute(self, **kwargs) -> SkillResult:
-        """执行 Skill（延迟加载实现）"""
-        # 首次执行时加载实现
+    def execute(self, **kwargs) -> Any:
+        """执行 Skill，返回 dict 或 str"""
         if not self._loaded:
             self._load_implementation()
 
-        # 没有实现
         if not self._implementation:
-            return SkillResult(
-                success=False,
-                output=None,
-                error=f"No implementation found for skill '{self.name}'"
-            )
+            raise RuntimeError(f"No implementation found for skill '{self.name}'")
 
-        try:
-            # 执行函数
-            result = self._implementation(**kwargs)
-
-            # 包装为 SkillResult
-            if isinstance(result, SkillResult):
-                return result
-
-            return SkillResult(success=True, output=result)
-
-        except Exception as e:
-            return SkillResult(
-                success=False,
-                output=None,
-                error=str(e)
-            )
+        return self._implementation(**kwargs)
 
 
 class SkillLoader:
@@ -331,32 +309,22 @@ class SkillLoader:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding='utf-8')
 
-    print("=== 测试渐进式 SkillLoader ===\n")
+    print("=== 测试 SkillLoader ===\n")
 
-    # 测试解析 skill.md
     loader = SkillLoader()
 
-    print("--- 测试1: 只加载元数据（快速） ---")
-    skill = loader.load_metadata("./skills/weather")
+    print("--- 测试1: 加载元数据 ---")
+    skill = loader.load_metadata("./skills/clothing")
     print(f"Skill 名称: {skill.name}")
     print(f"描述: {skill.description}")
     print(f"参数: {skill.parameters}")
     print(f"实现已加载: {skill._loaded}")
 
-    print("\n--- 测试2: 首次执行时加载实现 ---")
-    result = skill.execute(city="北京")
-    print(f"执行结果: {result.to_dict()}")
+    print("\n--- 测试2: 执行时加载实现 ---")
+    result = skill.execute(location="北京", weather="晴", temperature=30)
+    print(f"执行结果: {result}")
     print(f"实现已加载: {skill._loaded}")
 
-    print("\n--- 测试3: 批量加载元数据 ---")
+    print("\n--- 测试3: 批量加载 ---")
     skills = loader.load_metadata_from_directory("./skills")
-    print(f"加载了 {len(skills)} 个 Skill（仅元数据）")
-
-    print("\n--- 测试4: 执行多个 Skill ---")
-    for s in skills:
-        if s.name == "weather":
-            result = s.execute(city="上海")
-            print(f"Weather: {result.to_dict()}")
-        elif s.name == "location":
-            result = s.execute(city="广州")
-            print(f"Location: {result.to_dict()}")
+    print(f"加载了 {len(skills)} 个 Skill")

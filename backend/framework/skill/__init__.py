@@ -4,13 +4,12 @@
 支持转换为 Tool 格式（早绑定）。
 """
 
-from .base import Skill, SkillResult
+from .base import Skill
 from .registry import SkillRegistry
 from .loader import SkillLoader
 
 __all__ = [
     "Skill",
-    "SkillResult",
     "SkillRegistry",
     "SkillLoader",
 ]

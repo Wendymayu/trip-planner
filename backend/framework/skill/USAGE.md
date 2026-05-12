@@ -202,7 +202,7 @@ def execute(city: str) -> dict:
 │   }                                          │
 └──────────────────────────────────────────────┘
                        ▲
-                       │ register_to_tool_registry()
+                       │ register_to_tool()
 ┌──────────────────────────────────────────────┐
 │               SkillRegistry                   │
 │                                              │

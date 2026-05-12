@@ -75,7 +75,7 @@ class ToolRegistry:
         """将 Skill 注册为 Tool（早绑定）
 
         Args:
-            skill: Skill 对象（必须有 name, description, parameters, execute）
+            skill: Skill 对象
         """
         self.tools[skill.name] = ToolSchema(
             name=skill.name,
@@ -101,12 +101,6 @@ class ToolRegistry:
 
         try:
             result = tool_schema.func(**arguments)
-            # SkillResult 处理
-            if hasattr(result, 'success') and hasattr(result, 'output'):
-                if result.success:
-                    return json.dumps(result.output, ensure_ascii=False) if isinstance(result.output, dict) else str(result.output)
-                return f"Error: {result.error}"
-            # 普通结果处理
             if isinstance(result, str):
                 return result
             return json.dumps(result, ensure_ascii=False)
